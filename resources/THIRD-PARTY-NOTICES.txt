@@ -1,0 +1,25 @@
+Jinjing Desktop includes or interoperates with the following components:
+
+1. OpenAI Codex CLI / App Server 0.147.0
+   Source: https://github.com/openai/codex
+   License: Apache License 2.0
+   The original LICENSE and NOTICE files are included under LICENSES/Codex.
+
+2. Electron, Chromium, Node.js and packaged JavaScript dependencies
+   Electron and Chromium notices are included in the application directory.
+   Package license metadata remains inside resources/app.asar.
+
+3. Python 3.11 embedded distribution
+   Source: https://www.python.org/
+   The Python license is included in resources/python/LICENSE.txt.
+
+4. PyTorch, Sentence-Transformers, Transformers, NumPy and dependencies
+   Distributed in resources/python/Lib/site-packages under their respective licenses.
+
+5. BAAI BGE-M3 model
+   Bundled under resources/jinjing/models/bge-m3 with its original repository metadata.
+
+6. PubMed-derived citation and abstract snapshot
+   Record-level rights vary. See resources/jinjing/references/data-use.md.
+
+Jinjing is not affiliated with or endorsed by PubMed, NCBI, BAAI, or third-party model providers.

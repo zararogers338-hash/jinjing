@@ -1,0 +1,22 @@
+node_modules/
+dist/
+release/
+coverage/
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+test-attachment.md
+Thumbs.db
+.DS_Store
+
+# The offline corpus, embedding model, bundled runtimes, and release binaries
+# are staged outside this source tree and published as signed/hash-listed assets.
+resources/jinjing/
+resources/python/
+resources/codex/
+*.exe
+*.7z
+*.zip
+

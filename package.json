@@ -1,0 +1,54 @@
+{
+  "name": "jinjing-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "晋京 Jinjing — offline sports-medicine evidence client built on Codex App Server",
+  "main": "electron/main.cjs",
+  "author": "Jinjing",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build:web": "vite build",
+    "build": "npm run build:web && electron-builder --win --x64 --dir",
+    "build:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release-installer.ps1",
+    "test": "node --test test/*.test.cjs",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "mammoth": "^1.11.0",
+    "pdf-parse": "^1.1.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-markdown": "^10.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.0.12",
+    "vite": "^7.1.3",
+    "wait-on": "^8.0.4"
+  },
+  "build": {
+    "appId": "cn.jinjing.sportsmedicine",
+    "productName": "Jinjing",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "services/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "dir",
+      "icon": "resources/icon.png",
+      "artifactName": "Jinjing-${version}-${arch}.${ext}"
+    }
+  }
+}
