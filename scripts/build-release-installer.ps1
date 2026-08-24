@@ -16,8 +16,21 @@ $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $sevenZa = Join-Path $sevenZip 'extra\x64\7za.exe'
 $sevenZaDll = Join-Path $sevenZip 'extra\x64\7za.dll'
 $sfx = Join-Path $sevenZip 'sdk\bin\7zSD.sfx'
+$sfxManifest = Join-Path $project 'installer\asInvoker.manifest'
 
-foreach ($required in @($portable, $csc, $sevenZa, $sevenZaDll, $sfx, (Join-Path $project 'installer\Setup.cs'))) {
+$mtCommand = Get-Command mt.exe -ErrorAction SilentlyContinue
+if ($mtCommand) {
+    $mt = $mtCommand.Source
+}
+else {
+    $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+    $mt = Get-ChildItem -LiteralPath $kitsRoot -Recurse -Filter mt.exe -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match '\\x64\\mt\.exe$' } |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+
+foreach ($required in @($portable, $csc, $sevenZa, $sevenZaDll, $sfx, $sfxManifest, $mt, (Join-Path $project 'installer\Setup.cs'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing installer input: $required" }
 }
 if ([IO.Path]::GetFileName($portable) -cne 'app') {
@@ -36,8 +49,9 @@ $helper = Join-Path $output 'setup.exe'
 $archive = Join-Path $output 'Jinjing-Setup.payload.7z'
 $config = Join-Path $output 'Jinjing-Setup.config.txt'
 $installer = Join-Path $output 'Jinjing-Setup.exe'
+$sfxStub = Join-Path $output 'Jinjing-SfxStub.exe'
 
-foreach ($target in @($helper, $archive, $config, $installer)) {
+foreach ($target in @($helper, $archive, $config, $installer, $sfxStub)) {
     if (Test-Path -LiteralPath $target) { throw "Refusing to overwrite existing release artifact: $target" }
 }
 
@@ -64,9 +78,13 @@ RunProgram="setup.exe"
 '@
 [IO.File]::WriteAllText($config, $configText, (New-Object Text.UTF8Encoding($false)))
 
+Copy-Item -LiteralPath $sfx -Destination $sfxStub
+& $mt -nologo -manifest $sfxManifest "-outputresource:$sfxStub;#1"
+if ($LASTEXITCODE -ne 0) { throw 'Failed to embed the asInvoker manifest in the SFX stub' }
+
 $outputStream = [IO.File]::Open($installer, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
 try {
-    foreach ($part in @($sfx, $config, $archive)) {
+    foreach ($part in @($sfxStub, $config, $archive)) {
         $input = [IO.File]::OpenRead($part)
         try { $input.CopyTo($outputStream, 4MB) } finally { $input.Dispose() }
     }
