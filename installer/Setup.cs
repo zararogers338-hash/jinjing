@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -267,35 +268,226 @@ namespace JinjingInstaller
             private readonly TextBox pathBox;
             private readonly CheckBox desktopBox;
             private readonly CheckBox launchBox;
-            private readonly ProgressBar progressBar;
+            private readonly Panel progressTrack;
+            private readonly Panel progressFill;
             private readonly Label statusLabel;
             private readonly Button installButton;
             private readonly Button browseButton;
+            private readonly Button closeButton;
+            private bool installing;
+
+            [DllImport("dwmapi.dll")]
+            private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int valueSize);
+
+            [DllImport("user32.dll")]
+            private static extern bool ReleaseCapture();
+
+            [DllImport("user32.dll")]
+            private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
             internal InstallerForm(string sourcePath, string defaultTarget)
             {
                 source = sourcePath;
                 Text = "晋京 Jinjing 安装程序";
-                ClientSize = new Size(640, 285);
-                FormBorderStyle = FormBorderStyle.FixedDialog;
+                ClientSize = new Size(600, 520);
+                FormBorderStyle = FormBorderStyle.None;
                 MaximizeBox = false;
                 StartPosition = FormStartPosition.CenterScreen;
                 Font = new Font("Microsoft YaHei UI", 9F);
+                AutoScaleMode = AutoScaleMode.Dpi;
+                BackColor = Color.Black;
+                ForeColor = Color.White;
 
-                Label title = new Label { Left = 28, Top = 24, Width = 580, Height = 32, Text = "晋京 Jinjing 0.1.0", Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Bold) };
-                Label description = new Label { Left = 30, Top = 64, Width = 570, Height = 38, Text = "运动医学循证助手 · 完整离线文库与 BGE-M3\r\n安装后约占用 4.5 GiB。" };
-                Label pathLabel = new Label { Left = 30, Top = 118, Width = 100, Height = 24, Text = "安装位置" };
-                pathBox = new TextBox { Left = 30, Top = 143, Width = 490, Height = 27, Text = defaultTarget };
-                browseButton = new Button { Left = 530, Top = 141, Width = 78, Height = 29, Text = "浏览…" };
-                desktopBox = new CheckBox { Left = 30, Top = 180, Width = 180, Height = 24, Text = "创建桌面快捷方式", Checked = true };
-                launchBox = new CheckBox { Left = 230, Top = 180, Width = 180, Height = 24, Text = "安装后启动晋京", Checked = true };
-                progressBar = new ProgressBar { Left = 30, Top = 215, Width = 460, Height = 22, Minimum = 0, Maximum = 100 };
-                installButton = new Button { Left = 500, Top = 210, Width = 108, Height = 36, Text = "安装" };
-                statusLabel = new Label { Left = 30, Top = 247, Width = 575, Height = 25, Text = "准备就绪" };
-                Controls.AddRange(new Control[] { title, description, pathLabel, pathBox, browseButton, desktopBox, launchBox, progressBar, installButton, statusLabel });
+                Panel titleBar = new Panel {
+                    Left = 0,
+                    Top = 0,
+                    Width = 600,
+                    Height = 40,
+                    BackColor = Color.Black
+                };
+                Label windowTitle = new Label {
+                    Left = 18,
+                    Top = 0,
+                    Width = 180,
+                    Height = 40,
+                    Text = "JINJING  /  SETUP",
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    ForeColor = Color.FromArgb(112, 112, 112),
+                    Font = new Font("Consolas", 8F, FontStyle.Regular, GraphicsUnit.Point)
+                };
+                closeButton = new Button {
+                    Left = 552,
+                    Top = 0,
+                    Width = 48,
+                    Height = 40,
+                    Text = "×",
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.Black,
+                    ForeColor = Color.FromArgb(170, 170, 170),
+                    TabStop = false,
+                    Cursor = Cursors.Hand,
+                    Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Regular, GraphicsUnit.Point)
+                };
+                closeButton.FlatAppearance.BorderSize = 0;
+                closeButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(28, 28, 28);
+                closeButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(44, 44, 44);
+                titleBar.Controls.Add(windowTitle);
+                titleBar.Controls.Add(closeButton);
+                titleBar.MouseDown += DragWindow;
+                windowTitle.MouseDown += DragWindow;
+                closeButton.Click += delegate { if (!installing) Close(); };
+
+                Label mark = new Label {
+                    Left = 0,
+                    Top = 34,
+                    Width = 600,
+                    Height = 174,
+                    Text = "晋",
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    ForeColor = Color.White,
+                    Font = new Font("Microsoft YaHei UI", 82F, FontStyle.Regular, GraphicsUnit.Point)
+                };
+                Label version = new Label {
+                    Left = 0,
+                    Top = 210,
+                    Width = 600,
+                    Height = 22,
+                    Text = "JINJING  /  0.1.1",
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    ForeColor = Color.FromArgb(126, 126, 126),
+                    Font = new Font("Consolas", 8.5F, FontStyle.Regular, GraphicsUnit.Point)
+                };
+                Label pathLabel = new Label {
+                    Left = 32,
+                    Top = 264,
+                    Width = 120,
+                    Height = 20,
+                    Text = "安装位置",
+                    ForeColor = Color.FromArgb(166, 166, 166)
+                };
+                pathBox = new TextBox {
+                    Left = 32,
+                    Top = 288,
+                    Width = 446,
+                    Height = 28,
+                    Text = defaultTarget,
+                    BackColor = Color.FromArgb(16, 16, 16),
+                    ForeColor = Color.White,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    TabIndex = 1
+                };
+                browseButton = new Button {
+                    Left = 488,
+                    Top = 286,
+                    Width = 80,
+                    Height = 30,
+                    Text = "浏览",
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.Black,
+                    ForeColor = Color.White,
+                    Cursor = Cursors.Hand,
+                    TabIndex = 2
+                };
+                browseButton.FlatAppearance.BorderColor = Color.FromArgb(92, 92, 92);
+                browseButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(20, 20, 20);
+                browseButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(34, 34, 34);
+
+                desktopBox = new CheckBox {
+                    Left = 32,
+                    Top = 334,
+                    Width = 190,
+                    Height = 24,
+                    Text = "创建桌面快捷方式",
+                    Checked = true,
+                    FlatStyle = FlatStyle.Flat,
+                    ForeColor = Color.FromArgb(190, 190, 190),
+                    TabIndex = 3
+                };
+                launchBox = new CheckBox {
+                    Left = 238,
+                    Top = 334,
+                    Width = 170,
+                    Height = 24,
+                    Text = "安装后启动晋京",
+                    Checked = true,
+                    FlatStyle = FlatStyle.Flat,
+                    ForeColor = Color.FromArgb(190, 190, 190),
+                    TabIndex = 4
+                };
+
+                progressTrack = new Panel {
+                    Left = 32,
+                    Top = 388,
+                    Width = 536,
+                    Height = 2,
+                    BackColor = Color.FromArgb(42, 42, 42)
+                };
+                progressFill = new Panel {
+                    Left = 0,
+                    Top = 0,
+                    Width = 0,
+                    Height = 2,
+                    BackColor = Color.White
+                };
+                progressTrack.Controls.Add(progressFill);
+
+                statusLabel = new Label {
+                    Left = 32,
+                    Top = 404,
+                    Width = 536,
+                    Height = 24,
+                    Text = "准备就绪  /  约 4.5 GiB",
+                    ForeColor = Color.FromArgb(126, 126, 126),
+                    AutoEllipsis = true
+                };
+                installButton = new Button {
+                    Left = 452,
+                    Top = 452,
+                    Width = 116,
+                    Height = 40,
+                    Text = "安装",
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.White,
+                    ForeColor = Color.Black,
+                    Cursor = Cursors.Hand,
+                    TabIndex = 0
+                };
+                installButton.FlatAppearance.BorderSize = 0;
+                installButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(232, 232, 232);
+                installButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(204, 204, 204);
+
+                Controls.AddRange(new Control[] { titleBar, mark, version, pathLabel, pathBox, browseButton, desktopBox, launchBox, progressTrack, statusLabel, installButton });
+                AcceptButton = installButton;
 
                 browseButton.Click += Browse;
                 installButton.Click += StartInstall;
+            }
+
+            protected override void OnHandleCreated(EventArgs args)
+            {
+                base.OnHandleCreated(args);
+                try
+                {
+                    int enabled = 1;
+                    if (DwmSetWindowAttribute(Handle, 20, ref enabled, sizeof(int)) != 0)
+                        DwmSetWindowAttribute(Handle, 19, ref enabled, sizeof(int));
+                    int rounded = 2;
+                    DwmSetWindowAttribute(Handle, 33, ref rounded, sizeof(int));
+                }
+                catch { }
+            }
+
+            private void DragWindow(object sender, MouseEventArgs args)
+            {
+                if (args.Button != MouseButtons.Left) return;
+                ReleaseCapture();
+                SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero);
+            }
+
+            private void SetProgress(int percent)
+            {
+                int bounded = Math.Max(0, Math.Min(100, percent));
+                progressFill.Width = progressTrack.ClientSize.Width * bounded / 100;
             }
 
             private void Browse(object sender, EventArgs args)
@@ -310,10 +502,14 @@ namespace JinjingInstaller
 
             private void StartInstall(object sender, EventArgs args)
             {
+                installing = true;
                 installButton.Enabled = false;
                 browseButton.Enabled = false;
-                pathBox.Enabled = false;
-                statusLabel.Text = "正在复制文件…";
+                closeButton.Enabled = false;
+                pathBox.ReadOnly = true;
+                desktopBox.Enabled = false;
+                launchBox.Enabled = false;
+                statusLabel.Text = "正在准备安装";
                 string target = pathBox.Text;
                 bool desktopShortcut = desktopBox.Checked;
                 Thread worker = new Thread(delegate()
@@ -322,16 +518,21 @@ namespace JinjingInstaller
                     {
                         Install(source, target, desktopShortcut, false, delegate(int percent, string file)
                         {
-                            BeginInvoke((MethodInvoker)delegate { progressBar.Value = percent; statusLabel.Text = percent < 100 ? "正在安装 / " + file : "安装完成"; });
+                            BeginInvoke((MethodInvoker)delegate {
+                                SetProgress(percent);
+                                statusLabel.Text = percent < 100 ? string.Format(CultureInfo.InvariantCulture, "{0:00}%  /  {1}", percent, file) : "100%  /  安装完成";
+                            });
                         });
                         ExitCode = 0;
                         BeginInvoke((MethodInvoker)delegate
                         {
+                            installing = false;
+                            closeButton.Enabled = true;
                             installButton.Text = "完成";
                             installButton.Enabled = true;
                             installButton.Click -= StartInstall;
                             installButton.Click += delegate { if (launchBox.Checked) Process.Start(new ProcessStartInfo(Path.Combine(target, "Jinjing.exe")) { WorkingDirectory = target, UseShellExecute = true }); Close(); };
-                            MessageBox.Show(this, "晋京已经安装并完成关键文件哈希校验。", "安装完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            statusLabel.Text = "安装完成  /  文件校验通过";
                         });
                     }
                     catch (Exception error)
@@ -339,9 +540,14 @@ namespace JinjingInstaller
                         WriteLog("INSTALL ERROR " + error);
                         BeginInvoke((MethodInvoker)delegate
                         {
+                            installing = false;
+                            closeButton.Enabled = true;
                             installButton.Enabled = true;
                             browseButton.Enabled = true;
-                            pathBox.Enabled = true;
+                            pathBox.ReadOnly = false;
+                            desktopBox.Enabled = true;
+                            launchBox.Enabled = true;
+                            SetProgress(0);
                             statusLabel.Text = "安装失败";
                             MessageBox.Show(this, error.Message, "安装失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         });

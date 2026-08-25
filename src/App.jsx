@@ -34,6 +34,14 @@ function formatBytes(value) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
+function formatHistoryTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+}
+
 function EvidenceCard({ item, index, compact = false }) {
   const open = (event) => {
     event.preventDefault();
@@ -77,19 +85,28 @@ function Header({ page, setPage, theme, setTheme, state, openPalette }) {
   );
 }
 
-function SideRail({ page, setPage, state, newThread }) {
+function SideRail({ page, setPage, state, newThread, sessions, activeSessionId, openSession, sending }) {
   return (
     <aside className="side-rail">
       <div className="rail-label">PROJECT</div>
       <button className={page === "chat" ? "rail-item active" : "rail-item"} onClick={() => setPage("chat")}><b>01</b> Current study</button>
-      <button className="rail-item" onClick={newThread}><b>02</b> New session</button>
+      <button className="rail-item" onClick={newThread} disabled={sending}><b>02</b> New session</button>
+      <div className="rail-label history-label"><span>HISTORY</span><em>{sessions.length}</em></div>
+      <div className="history-list">
+        {sessions.map((session, index) => (
+          <button key={session.id} disabled={sending} className={`history-item ${session.id === activeSessionId ? "active" : ""}`} onClick={() => openSession(session.id)} title={session.title}>
+            <b>{String(index + 1).padStart(2, "0")}</b>
+            <span><strong>{session.title}</strong><small>{formatHistoryTime(session.updatedAt)} · {session.messageCount}</small></span>
+          </button>
+        ))}
+      </div>
       <div className="rail-label runtime-label">RUNTIME</div>
       <button className={page === "evidence" ? "rail-item active" : "rail-item"} onClick={() => setPage("evidence")}><b>03</b> Evidence graph</button>
       <button className={page === "library" ? "rail-item active" : "rail-item"} onClick={() => setPage("library")}><b>04</b> Offline library</button>
       <button className={page === "trace" ? "rail-item active" : "rail-item"} onClick={() => setPage("trace")}><b>05</b> Runtime trace</button>
       <button className={page === "settings" ? "rail-item active" : "rail-item"} onClick={() => setPage("settings")}><b>06</b> API settings</button>
       <div className="rail-footer">
-        <div>JINJING / {state.version || "0.1.0"}</div>
+        <div>JINJING / {state.version || "0.1.1"}</div>
         <div>LOCAL EVIDENCE RUNTIME</div>
         <div className="rail-health"><StatusDot status={state.evidenceStatus} /> LIBRARY {runtimeLabel(state.evidenceStatus)}</div>
       </div>
@@ -311,7 +328,11 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [logs, setLogs] = useState([]);
   const [palette, setPalette] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
   const assistantId = useRef(null);
+  const historyReady = useRef(false);
+  const sessionHydrated = useRef(true);
 
   const refresh = useCallback(async () => {
     const [nextState, nextSettings, nextLogs] = await Promise.all([window.jinjing.getState(), window.jinjing.getSettings(), window.jinjing.getLogs()]);
@@ -320,7 +341,29 @@ export default function App() {
     setLogs(nextLogs);
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  const refreshHistory = useCallback(async () => {
+    const list = await window.jinjing.listHistory();
+    setSessions(list);
+    return list;
+  }, []);
+
+  const loadInitialHistory = useCallback(async () => {
+    historyReady.current = false;
+    let list = await window.jinjing.listHistory();
+    let session = list.length ? await window.jinjing.getHistory(list[0].id) : await window.jinjing.createHistory();
+    if (!session) session = await window.jinjing.createHistory();
+    await window.jinjing.newThread();
+    setActiveSessionId(session.id);
+    setMessages(session.messages || []);
+    setEvidence(session.evidence || null);
+    assistantId.current = null;
+    sessionHydrated.current = !(session.messages || []).length;
+    list = await window.jinjing.listHistory();
+    setSessions(list);
+    historyReady.current = true;
+  }, []);
+
+  useEffect(() => { refresh(); loadInitialHistory(); }, [refresh, loadInitialHistory]);
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("jinjing-theme", theme); }, [theme]);
   useEffect(() => {
     const key = (event) => { if (event.ctrlKey && event.key.toLowerCase() === "k") { event.preventDefault(); setPalette(true); } if (event.key === "Escape") setPalette(false); };
@@ -349,6 +392,19 @@ export default function App() {
     if (event.type === "chat-error") { setSending(false); setMessages((old) => old.map((message) => message.id === assistantId.current ? { ...message, text: `运行失败：${event.message}`, pending: false, error: true } : message)); }
   }), []);
 
+  useEffect(() => {
+    if (!historyReady.current || !activeSessionId) return undefined;
+    const timer = window.setTimeout(async () => {
+      try {
+        await window.jinjing.saveHistory({ id: activeSessionId, messages, evidence });
+        await refreshHistory();
+      } catch (error) {
+        console.error("Failed to persist chat history", error);
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [activeSessionId, messages, evidence, refreshHistory]);
+
   const send = useCallback(async (payload) => {
     const text = String(payload?.text || "").trim();
     if (!text || sending) return;
@@ -360,11 +416,48 @@ export default function App() {
     setMessages((old) => [...old, userMessage, agentMessage]);
     setSending(true);
     setStage({ stage: "retrieving", message: "正在检索离线证据" });
-    try { await window.jinjing.sendMessage({ ...payload, text }); }
+    const history = sessionHydrated.current ? [] : messages.filter((message) => !message.pending);
+    sessionHydrated.current = true;
+    try { await window.jinjing.sendMessage({ ...payload, text, history }); }
     catch (error) { setSending(false); setMessages((old) => old.map((message) => message.id === agentMessage.id ? { ...message, text: `运行失败：${error.message}`, pending: false, error: true } : message)); }
-  }, [sending]);
+  }, [sending, messages]);
 
-  const newThread = useCallback(async () => { await window.jinjing.newThread(); setMessages([]); setEvidence(null); setPage("chat"); }, []);
+  const saveActiveHistory = useCallback(async () => {
+    if (!historyReady.current || !activeSessionId) return;
+    await window.jinjing.saveHistory({ id: activeSessionId, messages, evidence });
+  }, [activeSessionId, messages, evidence]);
+
+  const newThread = useCallback(async () => {
+    if (sending) return;
+    await saveActiveHistory();
+    historyReady.current = false;
+    await window.jinjing.newThread();
+    const session = await window.jinjing.createHistory();
+    setActiveSessionId(session.id);
+    setMessages([]);
+    setEvidence(null);
+    assistantId.current = null;
+    sessionHydrated.current = true;
+    await refreshHistory();
+    historyReady.current = true;
+    setPage("chat");
+  }, [sending, saveActiveHistory, refreshHistory]);
+
+  const openSession = useCallback(async (id) => {
+    if (sending || id === activeSessionId) { setPage("chat"); return; }
+    await saveActiveHistory();
+    historyReady.current = false;
+    const session = await window.jinjing.getHistory(id);
+    if (!session) { historyReady.current = true; return; }
+    await window.jinjing.newThread();
+    setActiveSessionId(session.id);
+    setMessages(session.messages || []);
+    setEvidence(session.evidence || null);
+    assistantId.current = null;
+    sessionHydrated.current = !(session.messages || []).length;
+    historyReady.current = true;
+    setPage("chat");
+  }, [sending, activeSessionId, saveActiveHistory]);
   const saveSettings = async (value) => { const saved = await window.jinjing.saveSettings(value); setSettings(saved); await refresh(); return saved; };
   const content = useMemo(() => {
     if (page === "chat") return <ChatPage state={{ ...state, settings }} messages={messages} evidence={evidence} stage={stage} sending={sending} send={send} interrupt={() => window.jinjing.interrupt()} setPage={setPage} />;
@@ -374,5 +467,5 @@ export default function App() {
     return <SettingsPage initial={settings} save={saveSettings} test={(value) => window.jinjing.testSettings(value)} state={state} />;
   }, [page, state, settings, messages, evidence, stage, sending, send, logs]);
 
-  return <div className="app-frame"><Header page={page} setPage={setPage} theme={theme} setTheme={setTheme} state={state} openPalette={() => setPalette(true)} /><div className="app-body"><SideRail page={page} setPage={setPage} state={state} newThread={newThread} />{content}</div><CommandPalette open={palette} close={() => setPalette(false)} setPage={setPage} newThread={newThread} theme={theme} setTheme={setTheme} /></div>;
+  return <div className="app-frame"><Header page={page} setPage={setPage} theme={theme} setTheme={setTheme} state={state} openPalette={() => setPalette(true)} /><div className="app-body"><SideRail page={page} setPage={setPage} state={state} newThread={newThread} sessions={sessions} activeSessionId={activeSessionId} openSession={openSession} sending={sending} />{content}</div><CommandPalette open={palette} close={() => setPalette(false)} setPage={setPage} newThread={newThread} theme={theme} setTheme={setTheme} /></div>;
 }

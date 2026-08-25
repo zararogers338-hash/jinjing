@@ -1,6 +1,6 @@
 {
   "name": "jinjing-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "晋京 Jinjing — offline sports-medicine evidence client built on Codex App Server",
   "main": "electron/main.cjs",

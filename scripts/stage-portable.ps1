@@ -104,9 +104,10 @@ Copy-Item -LiteralPath (Join-Path $codexRepo 'NOTICE') -Destination (Join-Path $
 
 $database = Join-Path $destination 'resources\jinjing\data\jinjing_evidence.db'
 $model = Join-Path $destination 'resources\jinjing\models\bge-m3\pytorch_model.bin'
+$packageMetadata = Get-Content -LiteralPath (Join-Path $project 'package.json') -Raw | ConvertFrom-Json
 $manifest = [ordered]@{
     product = 'Jinjing'
-    version = '0.1.0'
+    version = [string]$packageMetadata.version
     platform = 'windows-x64'
     createdAt = (Get-Date).ToUniversalTime().ToString('o')
     codexVersion = '0.147.0'

@@ -9,6 +9,7 @@
 - 兼容 Chat Completions / Responses 风格的第三方模型 API
 - 独立联网搜索、网页打开与页面内查找，带 SSRF 和响应大小限制
 - 多步 Agent、思考强度、浅色/深色模式
+- 使用 Windows 系统加密持久化聊天记录，可新建、切换并继续历史会话
 - PDF、DOCX、TXT、Markdown、CSV、TSV、JSON、XML、HTML 附件
 - 内置 Codex CLI、Python 3.11 CPU 运行时与完整离线检索资源
 
@@ -43,4 +44,3 @@ npm run build
 ## 许可证
 
 源代码采用 Apache License 2.0。随发行包分发的第三方组件、模型和文献元数据保留其各自许可证与使用条款。
-
